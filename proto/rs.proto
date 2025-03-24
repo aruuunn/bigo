@@ -1,0 +1,19 @@
+ syntax = "proto3";
+
+package rs;
+
+
+ message RouteWriteRequest {
+   float seismic_activity = 1;
+   float temperature_c = 2;
+   float radiation_level = 3;
+   string id = 4;
+   string location_id = 5;
+}
+
+
+ message RouteWriteResponse {}
+
+ service Rs {
+   rpc routeWrite(RouteWriteRequest) returns (RouteWriteResponse){}
+ }
