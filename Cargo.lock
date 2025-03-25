@@ -1515,6 +1515,7 @@ dependencies = [
  "actix-web",
  "actix_async_handler",
  "futures",
+ "log",
  "prost",
  "serde",
  "tokio",

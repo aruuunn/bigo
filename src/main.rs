@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .add_service(rs::rs::rs_server::RsServer::new(node))
             .serve(addr),
         api::bootstrap(8080)
-    )?;
+    );
 
     Ok(())
 }
