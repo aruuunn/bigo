@@ -41,11 +41,13 @@ impl Actor for LocationActor {
     type Context = Context<Self>;
 }
 
+
 impl Handler<PutLocation> for LocationActor {
     type Result = Result<(), ()>;
-    fn handle(&mut self, msg: PutLocation, _ctx: &mut Self::Context) -> Self::Result {
+     fn handle(&mut self, msg: PutLocation, _ctx: &mut Self::Context) -> Self::Result {
         self.modification_count += 1;
         self.location = msg.0;
+        // split data into 4 parts
         Ok(())
     }
 }

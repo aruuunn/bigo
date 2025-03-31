@@ -16,11 +16,11 @@ async fn index(_req: HttpRequest) -> impl Responder {
 }
 
 #[put("/{location_id}")]
-async fn put(body: Json<LocationStats>, id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>) -> impl Responder {
-    let (location_id) = id.into_inner();
+async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<Addr<RootActor>>) -> impl Responder {
+    let location_id = id.into_inner();
    let addr =  root_actor.send(GetAddr(location_id)).await.unwrap().unwrap();
     addr.send(PutLocation(body.into_inner())).await.unwrap().unwrap();
-    HttpResponse::Created()
+    return HttpResponse::Created()
 }
 
 #[get("/{location_id}")]
