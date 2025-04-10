@@ -10,7 +10,7 @@ pub struct LocationStats {
 
 use std::convert::TryInto;
 use std::error::Error;
-use std::fmt;
+use std::fmt::{self, write};
 
 // Custom error type for shard operations
 #[derive(Debug)]
@@ -18,6 +18,9 @@ pub enum ShardError {
     EncodingError(String),
     DecodingError(String),
     InvalidShard(String),
+    RpcError(String),
+    ChannelError(String),
+    ActixError(String)
 }
 
 impl fmt::Display for ShardError {
@@ -26,6 +29,9 @@ impl fmt::Display for ShardError {
             ShardError::EncodingError(msg) => write!(f, "Encoding error: {}", msg),
             ShardError::DecodingError(msg) => write!(f, "Decoding error: {}", msg),
             ShardError::InvalidShard(msg) => write!(f, "Invalid shard: {}", msg),
+            ShardError::RpcError(msg) => write!(f, "Rpc Error: {}", msg),
+            ShardError::ChannelError(msg) => write!(f, "Channel Error: {}", msg),
+            ShardError::ActixError(msg) => write!(f, "Actix Error: {}", msg)
         }
     }
 }

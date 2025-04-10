@@ -8,6 +8,7 @@ mod api;
 mod root_actor;
 mod location_actor;
 mod dto;
+mod rs;
 mod conn_manager;
 fn parse_ip(ip_str: &str) -> IpAddr {
     return IpAddr::from_str(ip_str.trim()).unwrap();
