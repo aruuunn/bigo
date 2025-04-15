@@ -32,7 +32,7 @@ impl LocationActor {
                 radiation_level: 0.0,
             }
         }
-    }
+    }  
 
     async fn write(self: &Self, addr: Arc<Addr<ChannelManager>>, data: EnrichedLocationStats) -> Result<Vec<()>, ShardError>{
         let channels_result = addr
