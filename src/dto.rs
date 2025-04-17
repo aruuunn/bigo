@@ -20,7 +20,8 @@ pub enum ShardError {
     InvalidShard(String),
     RpcError(String),
     ChannelError(String),
-    ActixError(String)
+    ActixError(String),
+    NotFoundError(String)
 }
 
 impl fmt::Display for ShardError {
@@ -31,7 +32,8 @@ impl fmt::Display for ShardError {
             ShardError::InvalidShard(msg) => write!(f, "Invalid shard: {}", msg),
             ShardError::RpcError(msg) => write!(f, "Rpc Error: {}", msg),
             ShardError::ChannelError(msg) => write!(f, "Channel Error: {}", msg),
-            ShardError::ActixError(msg) => write!(f, "Actix Error: {}", msg)
+            ShardError::ActixError(msg) => write!(f, "Actix Error: {}", msg),
+            ShardError::NotFoundError(msg) => write!(f, "Shard Not found Error: {}", msg)
         }
     }
 }

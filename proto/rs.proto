@@ -3,16 +3,24 @@
 package rs;
 
 
- message RouteWriteRequest {
-   float seismic_activity = 1;
-   float temperature_c = 2;
-   float radiation_level = 3;
+message RouteWriteRequest {
+   double seismic_activity = 1;
+   double temperature_c = 2;
+   double radiation_level = 3;
    string id = 4;
    string location_id = 5;
 }
 
+message EnrichedLocationStats {
+   double seismic_activity = 1;
+   double temperature_c = 2;
+   double radiation_level = 3;
+   string id = 4;
+   int64 modification_count = 5;
+}
 
- message RouteWriteResponse {}
+
+message RouteWriteResponse {}
 
 message WriteShardRequest {
    string location_id = 1;
@@ -22,7 +30,18 @@ message WriteShardRequest {
 message WriteShardResponse {}
 
 
+message GetShardRequest {
+   string location_id = 1;
+}
+
+message GetShardResponse {
+    optional bytes shard = 1;
+    optional EnrichedLocationStats locationStats = 2;
+}
+
+
  service Rs {
    rpc routeWrite(RouteWriteRequest) returns (RouteWriteResponse){}
    rpc writeShardRequest(WriteShardRequest) returns (WriteShardResponse){}
+   rpc getShardRequest(GetShardRequest) returns (GetShardResponse){}
  }

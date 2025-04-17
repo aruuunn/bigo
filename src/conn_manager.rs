@@ -7,28 +7,30 @@ use log::info;
 // Message to get a channel for a node
 #[derive(Message)]
 #[rtype(result = "Result<Channel, String>")]
-pub struct GetChannel(pub String); // String is the node ID
+pub struct GetChannel(pub u32); // String is the node ID
 
 // Message to reset a channel for a node
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct ResetChannel(pub String); // String is the node ID
+pub struct ResetChannel(pub u32); // String is the node ID
 
 // Message to get all channels
 #[derive(Message)]
-#[rtype(result = "Result<HashMap<String, Channel>, ()>")]
+#[rtype(result = "Result<(u32, HashMap<u32, Channel>), ()>")]
 pub struct GetAllChannels;
 
 pub struct ChannelManager {
-    channels: HashMap<String, Channel>,
-    endpoints: HashMap<String, String>, // node_id -> endpoint URL
-    reset_timers: HashMap<String, Instant>, // For debouncing
+    current_node: u32,
+    channels: HashMap<u32, Channel>,
+    endpoints: HashMap<u32, String>, // node_id -> endpoint URL
+    reset_timers: HashMap<u32, Instant>, // For debouncing
     debounce_duration: Duration,
 }
 
 impl ChannelManager {
-    pub fn new(debounce_duration: Duration) -> Self {
+    pub fn new(current_node: u32, debounce_duration: Duration) -> Self {
         ChannelManager {
+            current_node,
             channels: HashMap::new(),
             endpoints: HashMap::new(),
             reset_timers: HashMap::new(),
@@ -37,26 +39,26 @@ impl ChannelManager {
     }
 
     // Register an endpoint for a node
-    pub fn register_endpoint(&mut self, node_id: String, endpoint: String) {
+    pub fn register_endpoint(&mut self, node_id: u32, endpoint: String) {
         self.endpoints.insert(node_id, endpoint);
     }
 
     // Get or create a lazy channel
-    fn get_or_create_lazy_channel(&mut self, node_id: &str) -> Result<Channel, String> {
+    fn get_or_create_lazy_channel(&mut self, node_id: u32) -> Result<Channel, String> {
         // Return existing channel if available
-        if let Some(channel) = self.channels.get(node_id) {
+        if let Some(channel) = self.channels.get(&node_id) {
             return Ok(channel.clone());
         }
         
         // Create a new lazy channel
-        if let Some(endpoint_url) = self.endpoints.get(node_id) {
+        if let Some(endpoint_url) = self.endpoints.get(&node_id) {
             match Endpoint::from_shared(endpoint_url.clone()) {
                 Ok(endpoint) => {
                     // Create a lazily-connected channel
                     let channel = endpoint.connect_lazy();
                     
                     // Store the channel
-                    self.channels.insert(node_id.to_string(), channel.clone());
+                    self.channels.insert(node_id, channel.clone());
                     Ok(channel)
                 },
                 Err(e) => Err(format!("Invalid endpoint URL: {}", e))
@@ -75,12 +77,14 @@ impl Actor for ChannelManager {
     }
 }
 
+
+
 impl Handler<GetChannel> for ChannelManager {
     type Result = Result<Channel, String>;
 
     fn handle(&mut self, msg: GetChannel, _ctx: &mut Context<Self>) -> Self::Result {
         let node_id = msg.0;
-        self.get_or_create_lazy_channel(&node_id)
+        self.get_or_create_lazy_channel(node_id)
     }
 }
 
@@ -109,10 +113,10 @@ impl Handler<ResetChannel> for ChannelManager {
 
 // Handler for GetAllChannels
 impl Handler<GetAllChannels> for ChannelManager {
-    type Result = Result<HashMap<String, Channel>,()>;
+    type Result = Result<(u32, HashMap<u32, Channel>),()>;
 
     fn handle(&mut self, _msg: GetAllChannels, _ctx: &mut Context<Self>) -> Self::Result {
-        Ok(self.channels.clone())
+        Ok((self.current_node, self.channels.clone()))
     }
 }
 
@@ -120,7 +124,7 @@ impl Handler<GetAllChannels> for ChannelManager {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct RegisterEndpoint {
-    pub node_id: String,
+    pub node_id: u32,
     pub endpoint: String,
 }
 
@@ -150,10 +154,10 @@ fn test_endpoint(port: u16) -> String {
     #[actix::test]
     async fn test_get_channel_happy_path() {
         // Start the ChannelManager actor
-        let channel_manager = ChannelManager::new(Duration::from_millis(100)).start();
+        let channel_manager = ChannelManager::new(0, Duration::from_millis(100)).start();
         
         // Register an endpoint
-        let node_id = "test-node-1".to_string();
+        let node_id = 0;
         let endpoint_url = test_endpoint(50051);
         channel_manager.send(RegisterEndpoint {
             node_id: node_id.clone(),
@@ -161,11 +165,11 @@ fn test_endpoint(port: u16) -> String {
         }).await.unwrap();
         
         // Get a channel
-        let result = channel_manager.send(GetChannel(node_id.clone())).await.unwrap();
+        let result = channel_manager.send(GetChannel(node_id)).await.unwrap();
         assert!(result.is_ok(), "Should successfully create a lazy channel");
         
         // Get the same channel again (should reuse the existing one)
-        let result2 = channel_manager.send(GetChannel(node_id.clone())).await.unwrap();
+        let result2 = channel_manager.send(GetChannel(node_id)).await.unwrap();
         assert!(result2.is_ok(), "Should return the existing channel");
     }
 
@@ -233,27 +237,29 @@ fn test_endpoint(port: u16) -> String {
     #[actix::test]
     async fn test_get_all_channels() {
         // Start the ChannelManager actor
-        let channel_manager = ChannelManager::new(Duration::from_millis(100)).start();
+        let channel_manager = ChannelManager::new(4, Duration::from_millis(100)).start();
         
         // Register multiple endpoints
-        let node_ids = vec!["node-1", "node-2", "node-3"];
+        let node_ids: Vec<u32> = vec![0, 1, 2];
         for (i, node_id) in node_ids.iter().enumerate() {
             channel_manager.send(RegisterEndpoint {
-                node_id: node_id.to_string(),
+                node_id: node_id.clone(),
                 endpoint: test_endpoint(50060 + i as u16),
             }).await.unwrap();
             
             // Create channels for each node
-            let _ = channel_manager.send(GetChannel(node_id.to_string())).await.unwrap();
+            let _ = channel_manager.send(GetChannel(node_id.clone())).await.unwrap();
         }
         
         // Get all channels
-        let channels = channel_manager.send(GetAllChannels).await.unwrap().unwrap();
+        let (curr, channels) = channel_manager.send(GetAllChannels).await.unwrap().unwrap();
+
+        assert_eq!(curr, 4, "Current node id should be 4");
         
         // Verify all channels exist
         assert_eq!(channels.len(), node_ids.len(), "Should have channels for all registered nodes");
         for node_id in node_ids {
-            assert!(channels.contains_key(node_id), "Should have a channel for {}", node_id);
+            assert!(channels.contains_key(&node_id), "Should have a channel for {}", node_id);
         }
     }
 

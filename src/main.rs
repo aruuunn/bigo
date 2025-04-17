@@ -9,7 +9,9 @@ mod root_actor;
 mod location_actor;
 mod dto;
 mod rs;
+mod node;
 mod conn_manager;
+
 fn parse_ip(ip_str: &str) -> IpAddr {
     return IpAddr::from_str(ip_str.trim()).unwrap();
 }
@@ -25,7 +27,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .map(|ip_str| parse_ip(ip_str))
                 .collect();
 
-    api::bootstrap(8080).await?;
+
+    api::bootstrap(0, 8080).await?;
     Ok(())
 }
 
