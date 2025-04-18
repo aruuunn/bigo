@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::error;
 use std::future::{self, Future};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
@@ -10,7 +12,7 @@ use actix_web::test::status_service;
 use actix_web::web::{Data, Json};
 use futures::future::{try_join, try_join_all};
 use futures::{join, FutureExt};
-use log::info;
+use log::{error, info};
 use tonic::transport::Channel;
 use tonic::{IntoRequest, Request, Status};
 use crate::conn_manager::{ChannelManager, GetAllChannels, ResetChannel};
@@ -21,52 +23,10 @@ use crate::rs;
 use crate::rs::rs::{GetShardRequest, GetShardResponse, WriteShardRequest};
 
 
-async fn read(addr: Arc<Addr<ChannelManager>>, data: EnrichedLocationStats) -> Result<Vec<()>, ShardError>{
-    let channels_result = addr
-        .send(GetAllChannels {})
-        .await;
-
-    let (current_node, channels) = channels_result.unwrap().unwrap();
-
-
-    let shards = data.to_shards()?;
-
-    // Generate Reed-Solomon recovery shards
-    let recovery_shards = reed_solomon_simd::encode(4, 6, shards.as_slice()).unwrap();
-
-
-    // Send shards to other nodes
-    let mut futures = Vec::new();
-
-
-    for (i, shard) in recovery_shards.into_iter().enumerate() {
-        // Skip self-sharding if needed
-
-        // Get node_id for this shard (using some strategy, e.g., consistent hashing)
-
-
-        let node_id: u32 = if i as u32 >= current_node {
-            i+1
-        } else {
-            i
-        } as u32;
-
-        if let Some(channel) = channels.get(&node_id) {
-            let write_future = write_shard_to_node(
-                addr.clone(),
-                node_id.clone(),
-                channel.clone(),
-                self.location_id.clone(),
-                shard.to_vec(),
-            );
-            futures.push(write_future);
-        } else {
-            (info!("No channel found for node {}", node_id));
-        }
-    }
-
-    try_join_all(futures).boxed().await
+fn get_owner_node_id(location_id: String) -> u32 {
+   return 1;
 }
+
 
 async fn read_shard_from_node(
     addr: Arc<Addr<ChannelManager>>,
@@ -92,7 +52,11 @@ async fn read_shard_from_node(
                 addr.do_send(ResetChannel(node_id));
             }
             
-            Err(ShardError::RpcError(format!("Failed to write shard: {}", status)))
+            error!("Failed to read shard from node {}: {}", node_id, status);
+            Ok(GetShardResponse {
+                shard: None,
+                location_stats: None,
+            })
         }
     }
 }
@@ -143,18 +107,90 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
         for i in 0..7 {
                 f.push(read_shard_from_node(channel_manager.clone().into_inner(), i, channels.get(&i).unwrap().clone(), location_id.clone()));
         }
-        let res = try_join_all(f).boxed().await;
-    }
+        let res = try_join_all(f).boxed().await.unwrap();
+        
+        let mut original_shards: HashMap<usize, Vec<u8>> = HashMap::new();
+        let mut recovery_shards: HashMap<usize, Vec<u8>> = HashMap::new();
 
+        let owner_node_id = get_owner_node_id(location_id.clone());
+
+        if let Some(location_stats) = res[owner_node_id as usize].location_stats.clone() {
+            let enriched_location_stats = EnrichedLocationStats {
+                id: location_stats.id,
+                seismic_activity: location_stats.seismic_activity,
+                temperature_c: location_stats.temperature_c,
+                radiation_level: location_stats.radiation_level,
+                modification_count: location_stats.modification_count,
+            };
+            
+            return HttpResponse::Ok().json(enriched_location_stats);
+        }
+
+        let mut shard_count = 0;
+
+        for i in 0..7usize {
+            let node_id = if i as u32 >= owner_node_id {
+                i+1
+            } else {
+                i
+            };
+            if let Some(shard) = res[node_id as usize].shard.clone() {
+                shard_count += 1;
+                if i >= 5 {
+                    recovery_shards.insert(i, shard);
+                } else {
+                    // original_shards.push((i, shard));
+                    original_shards.insert(i, shard);
+                }
+          
+            }
+            //
+        }
+
+        if shard_count < 4 {
+            return HttpResponse::InternalServerError().json("Not enough shards");
+        }
+
+        let restored = reed_solomon_simd::decode(
+            4, 2, original_shards.iter()
+            .map(|(k, v)| (*k, v.clone())), 
+            recovery_shards
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+        ).unwrap();
+
+        let mut shards: [Vec<u8>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        for i in 0..4 {
+            if let Some(data) = original_shards.get(&i) {
+                shards[i] = data.clone();
+            } else if let Some(data) = restored.get(&i) {
+                shards[i] = data.clone();
+            } else {
+                error!("Failed to restore shard {}", i);
+                return HttpResponse::InternalServerError().json("Failed to restore shard");
+            }
+        }
+
+        return EnrichedLocationStats::from_shards(shards)
+            .map(|enriched_location_stats| {
+                HttpResponse::Ok().json(enriched_location_stats)
+            })
+            .unwrap_or_else(|_| {
+                error!("Failed to decode shards");
+                HttpResponse::InternalServerError().json("Failed to decode shards")
+            });
+    }
 
 
     HttpResponse::NotFound().json(())
 }
 
 
-pub async fn bootstrap(current_node: u32, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn bootstrap(current_node: u32, port: u16, endpoint: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     let root_actor = Data::new(RootActor::new().start());
-    let channel_manager = Data::new(ChannelManager::new(current_node, Duration::from_millis(300)).start());
+    let cm = ChannelManager::new(current_node, endpoint, Duration::from_millis(300)).start();
+    
+    let channel_manager = Data::new(cm);
     HttpServer::new(move || App::new()
         .app_data(Data::clone(&root_actor))
         .app_data( Data::clone(&channel_manager))

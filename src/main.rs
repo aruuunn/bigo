@@ -19,16 +19,21 @@ fn parse_ip(ip_str: &str) -> IpAddr {
 
 #[actix::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    env::set_var("CURRENT_NODE_IP", "172.0.0.2");
-    env::set_var("ALL_NODE_IPS", "172.0.0.2,127.0.0.1");
-    let current_node_ip = parse_ip(&env::var("CURRENT_NODE_IP")?);
-    let all_node_ips: Vec<_> =  env::var("ALL_NODE_IPS").unwrap()
+    let current_node_ip_value = env::var("CURRENT_NODE_IP").unwrap();
+    let current_node_ip = current_node_ip_value.trim();
+    let all_node_ips: Vec<String> =  env::var("ALL_NODE_IPS").unwrap()
+                .trim()
                 .split(',')
-                .map(|ip_str| parse_ip(ip_str))
+                .map(|ip_str| ip_str.trim().to_owned())
                 .collect();
+    
+    let current_node_idx = all_node_ips.iter()
+    .position(|ip| *ip == current_node_ip)
+    .expect("Current node IP not found in ALL_NODE_IPS");
 
+    let port = current_node_ip.split(":").collect::<Vec<&str>>()[1].parse::<u16>().unwrap();
 
-    api::bootstrap(0, 8080).await?;
+    api::bootstrap(current_node_idx as u32, port, all_node_ips).await?;
     Ok(())
 }
 

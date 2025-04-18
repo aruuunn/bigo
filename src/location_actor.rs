@@ -42,7 +42,7 @@ impl LocationActor {
         let shards = data.to_shards()?;
 
         // Generate Reed-Solomon recovery shards
-        let recovery_shards = reed_solomon_simd::encode(4, 6, shards.as_slice()).unwrap();
+        let recovery_shards = [shards.to_vec(), reed_solomon_simd::encode(4, 2, shards.as_slice()).unwrap()].concat();
 
 
         // Send shards to other nodes

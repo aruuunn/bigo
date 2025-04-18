@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use actix::prelude::*;
 use tonic::transport::{Channel, Endpoint};
@@ -28,11 +29,14 @@ pub struct ChannelManager {
 }
 
 impl ChannelManager {
-    pub fn new(current_node: u32, debounce_duration: Duration) -> Self {
+    pub fn new(current_node: u32, endpoints: Vec<String>, debounce_duration: Duration) -> Self {
         ChannelManager {
             current_node,
             channels: HashMap::new(),
-            endpoints: HashMap::new(),
+            endpoints: endpoints.into_iter()
+                .enumerate()
+                .map(|(i, endpoint)| (i as u32, endpoint))
+                .collect(),
             reset_timers: HashMap::new(),
             debounce_duration,
         }
@@ -154,7 +158,7 @@ fn test_endpoint(port: u16) -> String {
     #[actix::test]
     async fn test_get_channel_happy_path() {
         // Start the ChannelManager actor
-        let channel_manager = ChannelManager::new(0, Duration::from_millis(100)).start();
+        let channel_manager = ChannelManager::new(0, Vec::new(), Duration::from_millis(100)).start();
         
         // Register an endpoint
         let node_id = 0;
@@ -237,7 +241,7 @@ fn test_endpoint(port: u16) -> String {
     #[actix::test]
     async fn test_get_all_channels() {
         // Start the ChannelManager actor
-        let channel_manager = ChannelManager::new(4, Duration::from_millis(100)).start();
+        let channel_manager = ChannelManager::new(4, Vec::new(), Duration::from_millis(100)).start();
         
         // Register multiple endpoints
         let node_ids: Vec<u32> = vec![0, 1, 2];
