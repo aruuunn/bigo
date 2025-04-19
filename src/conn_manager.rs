@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use actix::prelude::*;
@@ -120,6 +121,14 @@ impl Handler<GetAllChannels> for ChannelManager {
     type Result = Result<(u32, HashMap<u32, Channel>),()>;
 
     fn handle(&mut self, _msg: GetAllChannels, _ctx: &mut Context<Self>) -> Self::Result {
+        let mut channels = HashMap::new();
+        for (node_id, _) in self.endpoints.clone() {
+            if let Ok(channel) = self.get_or_create_lazy_channel(node_id) {
+                channels.insert(node_id, channel);
+            } else {
+                info!("Failed to create channel for node: {}", node_id);
+            }
+        }
         Ok((self.current_node, self.channels.clone()))
     }
 }

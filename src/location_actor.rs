@@ -71,7 +71,7 @@ impl LocationActor {
                 );
                 futures.push(write_future);
             } else {
-                (info!("No channel found for node {}", node_id));
+                (println!("No channel found for node {}", node_id));
             }
         }
 
