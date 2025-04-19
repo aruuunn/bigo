@@ -10,10 +10,10 @@ use actix_web::{get, HttpRequest, Responder};
 use actix_web::dev::Path;
 use actix_web::test::status_service;
 use actix_web::web::{Data, Json};
+use awc::{Client, JsonBody};
 use futures::future::{try_join, try_join_all};
 use futures::{FutureExt};
 use log::{error, info};
-use reqwest::Client;
 use tokio::join;
 use tonic::transport::{Channel, Server};
 use tonic::{IntoRequest, Request, Status};
@@ -92,21 +92,33 @@ async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<
     let location_id = id.into_inner();
     let owner_id = get_owner_node_id(location_id.clone());
 
-    info!("routing write request for location_id {} to node {}", location_id, owner_id);
+    info!("routing write request for location_id {} to node {} {}", location_id, *current_node.clone().into_inner(), owner_id);
 
     // as current node is of type Data<u32>, I'm having trouble comparing them
-    if current_node.into_inner().to_string() != owner_id.to_string() {
-        let url = format!("http://{}:8000", endpoints.get(owner_id as usize).unwrap());
+    if *current_node.into_inner() != owner_id {
+        info!("ahahahah");
+        let url = format!("http://{}:8000/{}", endpoints.get(owner_id as usize).unwrap(),location_id);
+        info!("url: {}", url);
         let resp = client
-        .put(&url).json(&body.into_inner()).send().await;
+        .put(&url).send_json(&body.into_inner()).await;
+
+        println!("response: {:?}", resp);
 
         if let Err(err) = resp {
             error!("Failed to put location stats: {}", err);
             return HttpResponse::InternalServerError().json("Failed to put location stats");
         }
+
+        let result=  resp.unwrap();
+        if result.status() != 201 {
+            error!("Failed to put location stats: {}", result.status());
+            return HttpResponse::InternalServerError().json("Failed to put location stats");
+        }
     
         return HttpResponse::Created().json(());
     }
+
+    info!("current node is the owner of the location_id {}", location_id);
 
    let addr =  root_actor.send(GetAddr(location_id)).await.unwrap().unwrap();
     if let Err(err) = addr.send(PutLocation(body.into_inner(), channel_manager.into_inner())).await.unwrap() {
@@ -236,7 +248,7 @@ pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Bo
     .app_data(Data::clone(&channel_manager))
     .app_data(Data::new(current_node))
     .app_data(Data::clone(&endpoint_clone))
-    .app_data(Data::new(reqwest::Client::new()))
+    .app_data(Data::new(Client::default()))
     .service(index)
     .service(put)
     .service(get))

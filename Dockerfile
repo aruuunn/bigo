@@ -3,7 +3,7 @@ FROM rust:slim-bullseye
 
 WORKDIR /app
 
-RUN apt update -y && apt install -y unzip curl
+RUN apt update -y && apt install -y unzip curl pkg-config libssl-dev
 
 RUN curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-x86_64.zip
 RUN unzip protoc-27.3-linux-x86_64.zip -d /usr/local
