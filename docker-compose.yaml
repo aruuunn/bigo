@@ -6,6 +6,7 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-1:8001
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
 
@@ -14,6 +15,7 @@ services:
     ports:
       - "8002:8002"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-2:8002
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
 
@@ -22,6 +24,7 @@ services:
     ports:
       - "8003:8003"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-3:8003
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
 
@@ -30,6 +33,7 @@ services:
     ports:
       - "8004:8004"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-4:8004
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
 
@@ -38,6 +42,7 @@ services:
     ports:
       - "8005:8005"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-5:8005
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
 
@@ -46,6 +51,7 @@ services:
     ports:
       - "8006:8006"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-6:8006
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
 
@@ -54,5 +60,6 @@ services:
     ports:
       - "8007:8007"
     environment:
+      - RUST_LOG=info
       - CURRENT_NODE_IP=rust-server-7:8007
       - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
