@@ -11,15 +11,18 @@ use actix_web::dev::Path;
 use actix_web::test::status_service;
 use actix_web::web::{Data, Json};
 use futures::future::{try_join, try_join_all};
-use futures::{join, FutureExt};
+use futures::{FutureExt};
 use log::{error, info};
-use tonic::transport::Channel;
+use tokio::join;
+use tonic::transport::{Channel, Server};
 use tonic::{IntoRequest, Request, Status};
 use crate::conn_manager::{ChannelManager, GetAllChannels, ResetChannel};
 use crate::dto::{EnrichedLocationStats, LocationStats, ShardError};
 use crate::location_actor::{GetLocation, GetShard, PutLocation};
+use crate::node::Node;
 use crate::root_actor::{GetAddr, RootActor};
 use crate::rs;
+use crate::rs::rs::rs_server::{Rs, RsServer};
 use crate::rs::rs::{GetShardRequest, GetShardResponse, WriteShardRequest};
 
 
@@ -83,8 +86,12 @@ async fn index(_req: HttpRequest) -> impl Responder {
 async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<Addr<RootActor>>, channel_manager: Data<Addr<ChannelManager>>) -> impl Responder {
     let location_id = id.into_inner();
    let addr =  root_actor.send(GetAddr(location_id)).await.unwrap().unwrap();
-    addr.send(PutLocation(body.into_inner(), channel_manager.into_inner())).await.unwrap().unwrap();
-    return HttpResponse::Created()
+    if let Err(err) = addr.send(PutLocation(body.into_inner(), channel_manager.into_inner())).await.unwrap() {
+        error!("Failed to put location stats: {}", err);
+        return HttpResponse::InternalServerError().json("Failed to put location stats");
+    }
+
+    return HttpResponse::Created().json(());
 }
 
 #[get("/{location_id}")]
@@ -128,7 +135,9 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
 
         let mut shard_count = 0;
 
-        for i in 0..7usize {
+        // println!("shards respons from nodes: {:?}", res);
+
+        for i in 0..6usize {
             let node_id = if i as u32 >= owner_node_id {
                 i+1
             } else {
@@ -136,8 +145,8 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
             };
             if let Some(shard) = res[node_id as usize].shard.clone() {
                 shard_count += 1;
-                if i >= 5 {
-                    recovery_shards.insert(i, shard);
+                if i >= 4 {
+                    recovery_shards.insert(i-4, shard);
                 } else {
                     // original_shards.push((i, shard));
                     original_shards.insert(i, shard);
@@ -186,22 +195,37 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
 }
 
 
-pub async fn bootstrap(current_node: u32, port: u16, endpoint: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let root_actor = Data::new(RootActor::new().start());
+pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let root_actor_addr = RootActor::new().start();
+    let root_actor = Data::new(root_actor_addr.clone());
     let cm = ChannelManager::new(current_node, endpoint, Duration::from_millis(300)).start();
     
-    println!("Starting server on port {}", port);
+
+    let node = Node { root_actor: root_actor_addr  };
+
 
     let channel_manager = Data::new(cm);
-    HttpServer::new(move || App::new()
-        .app_data(Data::clone(&root_actor))
-        .app_data( Data::clone(&channel_manager))
-        .service(index)
-        .service(put)
-        .service(get))
-        .bind(("0.0.0.0", port))?
-        .run()
-        .await?;
+
+    let http_server = HttpServer::new(move || App::new()
+    .app_data(Data::clone(&root_actor))
+    .app_data( Data::clone(&channel_manager))
+    .service(index)
+    .service(put)
+    .service(get))
+    .bind(("0.0.0.0", 8000)).unwrap()
+    .run();
+
+    let reflection_service = tonic_reflection::server::Builder::configure()
+    .register_encoded_file_descriptor_set(rs::rs::FILE_DESCRIPTOR_SET)
+    .build_v1()
+    .unwrap();
+
+    let grpc = Server::builder()
+    .add_service(reflection_service)
+    .add_service(RsServer::new(node))
+    .serve("0.0.0.0:8080".parse().unwrap());
+    
+    join!(grpc, http_server);
 
     Ok(())
 }

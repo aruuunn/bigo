@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::str::FromStr;
 use std::sync::Arc;
 use actix::fut::{ready, wrap_future};
 use actix::prelude::*;
 use actix_async_handler::async_handler;
 use futures::future::try_join_all;
 use futures::FutureExt;
-use log::info;
+use log::{error, info};
 use tokio::sync::Mutex;
 use tonic::client::GrpcService;
 use tonic::transport::{Channel, Endpoint, Uri};
@@ -86,7 +87,6 @@ impl LocationActor {
         location_id: String,
         shard_data: Vec<u8>,
     ) -> Result<(), ShardError> {
-        // Create a gRPC client using the channel
         let mut client = rs::rs::rs_client::RsClient::new(channel);
         
         // Prepare the request
@@ -118,7 +118,8 @@ impl LocationActor {
             tonic::Code::Unavailable | 
             tonic::Code::DeadlineExceeded | 
             tonic::Code::Cancelled |
-            tonic::Code::Aborted
+            tonic::Code::Aborted |
+            tonic::Code::Unknown
         )
     }
 }

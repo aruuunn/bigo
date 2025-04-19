@@ -1,5 +1,5 @@
 # Dockerfile
-FROM rust:bullseye
+FROM rust:slim-bullseye
 
 WORKDIR /app
 

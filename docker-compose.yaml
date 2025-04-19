@@ -2,64 +2,65 @@ version: "3.9"
 
 services:
   rust-server-1:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8001:8001"
+      - "8001:8000"
+      - "8081:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-1:8001
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
-
+      - CURRENT_NODE_IP=rust-server-1
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7
   rust-server-2:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8002:8002"
+      - "8002:8000"
+      - "8082:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-2:8002
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
-
+      - CURRENT_NODE_IP=rust-server-2
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7
   rust-server-3:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8003:8003"
+      - "8003:8000"
+      - "8083:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-3:8003
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
-
+      - CURRENT_NODE_IP=rust-server-3
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7
   rust-server-4:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8004:8004"
+      - "8004:8000"
+      - "8084:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-4:8004
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
-
+      - CURRENT_NODE_IP=rust-server-4
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7
   rust-server-5:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8005:8005"
+      - "8005:8000"
+      - "8085:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-5:8005
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
-
+      - CURRENT_NODE_IP=rust-server-5
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7
   rust-server-6:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8006:8006"
+      - "8006:8000"
+      - "8086:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-6:8006
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
-
+      - CURRENT_NODE_IP=rust-server-6
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7
   rust-server-7:
-    build: .
+    image: bigo:${IMAGE_TAG}
     ports:
-      - "8007:8007"
+      - "8007:8000"
+      - "8087:8080"
     environment:
       - RUST_LOG=info
-      - CURRENT_NODE_IP=rust-server-7:8007
-      - ALL_NODE_IPS=rust-server-1:8001,rust-server-2:8002,rust-server-3:8003,rust-server-4:8004,rust-server-5:8005,rust-server-6:8006,rust-server-7:8007
+      - CURRENT_NODE_IP=rust-server-7
+      - ALL_NODE_IPS=rust-server-1,rust-server-2,rust-server-3,rust-server-4,rust-server-5,rust-server-6,rust-server-7

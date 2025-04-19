@@ -2,9 +2,14 @@
 
 set -e
 
-echo "🔨 Building Rust binary..."
-cargo build --release
 
 echo "📦 Rebuilding and restarting Docker containers..."
-docker compose build
+export IMAGE_TAG=$(openssl rand -base64 6 | sha1 )
+
+docker build -t bigo:${IMAGE_TAG} .
+
+# docker compose down
+
 docker compose up -d
+
+docker logs bigo-rust-server-2-1 -f
