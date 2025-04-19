@@ -41,7 +41,7 @@ impl fmt::Display for ShardError {
 impl Error for ShardError {}
 
 // Constants for our encoding
-const ID_SIZE: usize = 12; // 11 chars + null terminator
+const ID_SIZE: usize = 8; // 7 chars + null terminator
 const TOTAL_SIZE: usize = ID_SIZE + 8 + 8 + 8 + 8; // id + 4 fields (8 bytes each)
 const SHARD_SIZE: usize = TOTAL_SIZE / 4; // Each shard will be exactly this size
 
@@ -62,12 +62,6 @@ impl EnrichedLocationStats {
         temperature_c: f64,
         radiation_level: f64,
     ) -> Result<Self, ShardError> {
-        if id.len() > 11 {
-            return Err(ShardError::EncodingError(
-                "ID is too long (max 11 characters)".to_string(),
-            ));
-        }
-
         Ok(Self {
             id,
             modification_count,
@@ -93,14 +87,14 @@ impl EnrichedLocationStats {
 
         // Encode ID with padding
         let mut id = self.id.clone();
-        if id.len() > 11 {
+        if id.len() > 6 {
             return Err(ShardError::EncodingError(
-                "ID is too long (max 11 characters)".to_string(),
+                "ID is too long (max 6 characters)".to_string(),
             ));
         }
 
         // Pad ID with '$' characters to make it fixed size
-        while id.len() < 11 {
+        while id.len() < 7 {
             id.push('$');
         }
 
@@ -231,7 +225,7 @@ mod tests {
     fn test_encode_decode_roundtrip() {
         // Create original stats
         let original =
-            EnrichedLocationStats::new("TEST123".to_string(), 100, 5.678, -10.5, 0.0123).unwrap();
+            EnrichedLocationStats::new("TEST12".to_string(), 100, 5.678, -10.5, 0.0123).unwrap();
 
         // Encode to shards
         let shards = original.to_shards().unwrap();
@@ -269,9 +263,9 @@ mod tests {
 
     #[test]
     fn test_max_length_id() {
-        // ID with exactly 11 characters (the maximum)
-        let id = "12345678901".to_string();
-        assert_eq!(id.len(), 11);
+        // ID with exactly 6 characters (the maximum)
+        let id = "123456".to_string();
+        assert_eq!(id.len(), 6);
 
         let stats = EnrichedLocationStats::new(id.clone(), 42, 3.14, 25.5, 0.001).unwrap();
 
@@ -285,7 +279,7 @@ mod tests {
     fn test_extreme_values() {
         // Test with extreme numeric values
         let stats = EnrichedLocationStats::new(
-            "EXTREME".to_string(),
+            "EXTREM".to_string(),
             i64::MAX,
             f64::MAX,
             f64::MIN_POSITIVE,
@@ -296,7 +290,7 @@ mod tests {
         let shards = stats.to_shards().unwrap();
         let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
 
-        assert_eq!(decoded.id, "EXTREME");
+        assert_eq!(decoded.id, "EXTREM");
         assert_eq!(decoded.modification_count, i64::MAX);
         assert_eq!(decoded.seismic_activity, f64::MAX);
         assert_eq!(decoded.temperature_c, f64::MIN_POSITIVE);
@@ -304,20 +298,6 @@ mod tests {
     }
 
     // ----- SAD PATH TESTS -----
-
-    #[test]
-    fn test_id_too_long() {
-        // ID with 12 characters (exceeds maximum of 11)
-        let result = EnrichedLocationStats::new("123456789012".to_string(), 42, 3.14, 25.5, 0.001);
-
-        assert!(result.is_err());
-        match result {
-            Err(ShardError::EncodingError(msg)) => {
-                assert!(msg.contains("ID is too long"));
-            }
-            _ => panic!("Expected EncodingError"),
-        }
-    }
 
     #[test]
     fn test_to_shards_id_too_long() {
@@ -389,7 +369,7 @@ mod tests {
     fn test_from_shards_corrupted_data() {
         // Create valid stats and encode to shards
         let stats =
-            EnrichedLocationStats::new("CORRUPT".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
+            EnrichedLocationStats::new("CORRUP".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
 
         let mut shards = stats.to_shards().unwrap();
 
@@ -402,7 +382,7 @@ mod tests {
         let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
 
         // But the values will be different from the original
-        assert_eq!(decoded.id, "CORRUPT"); // ID should be the same
+        assert_eq!(decoded.id, "CORRUP"); // ID should be the same
         assert!(
             decoded.seismic_activity != 3.14
                 || decoded.temperature_c != 25.5

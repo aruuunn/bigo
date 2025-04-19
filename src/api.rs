@@ -190,6 +190,8 @@ pub async fn bootstrap(current_node: u32, port: u16, endpoint: Vec<String>) -> R
     let root_actor = Data::new(RootActor::new().start());
     let cm = ChannelManager::new(current_node, endpoint, Duration::from_millis(300)).start();
     
+    println!("Starting server on port {}", port);
+
     let channel_manager = Data::new(cm);
     HttpServer::new(move || App::new()
         .app_data(Data::clone(&root_actor))
