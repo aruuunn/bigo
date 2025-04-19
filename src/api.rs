@@ -13,6 +13,7 @@ use actix_web::web::{Data, Json};
 use futures::future::{try_join, try_join_all};
 use futures::{FutureExt};
 use log::{error, info};
+use reqwest::Client;
 use tokio::join;
 use tonic::transport::{Channel, Server};
 use tonic::{IntoRequest, Request, Status};
@@ -27,7 +28,11 @@ use crate::rs::rs::{GetShardRequest, GetShardResponse, WriteShardRequest};
 
 
 fn get_owner_node_id(location_id: String) -> u32 {
-   return 1;
+    let mut owner_id = 0;
+    for (_, c) in location_id.chars().enumerate() {
+        owner_id = ((owner_id * 10) % 7 + (c as u32) % 7) % 7;
+    }
+   return owner_id;
 }
 
 
@@ -83,8 +88,26 @@ async fn index(_req: HttpRequest) -> impl Responder {
 }
 
 #[put("/{location_id}")]
-async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<Addr<RootActor>>, channel_manager: Data<Addr<ChannelManager>>) -> impl Responder {
+async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<Addr<RootActor>>, channel_manager: Data<Addr<ChannelManager>>, current_node: Data<u32>, endpoints: Data<Vec<String>>, client: Data<Client>) -> impl Responder {
     let location_id = id.into_inner();
+    let owner_id = get_owner_node_id(location_id.clone());
+
+    info!("routing write request for location_id {} to node {}", location_id, owner_id);
+
+    // as current node is of type Data<u32>, I'm having trouble comparing them
+    if current_node.into_inner().to_string() != owner_id.to_string() {
+        let url = format!("http://{}:8000", endpoints.get(owner_id as usize).unwrap());
+        let resp = client
+        .put(&url).json(&body.into_inner()).send().await;
+
+        if let Err(err) = resp {
+            error!("Failed to put location stats: {}", err);
+            return HttpResponse::InternalServerError().json("Failed to put location stats");
+        }
+    
+        return HttpResponse::Created().json(());
+    }
+
    let addr =  root_actor.send(GetAddr(location_id)).await.unwrap().unwrap();
     if let Err(err) = addr.send(PutLocation(body.into_inner(), channel_manager.into_inner())).await.unwrap() {
         error!("Failed to put location stats: {}", err);
@@ -198,7 +221,7 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
 pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     let root_actor_addr = RootActor::new().start();
     let root_actor = Data::new(root_actor_addr.clone());
-    let cm = ChannelManager::new(current_node, endpoint, Duration::from_millis(300)).start();
+    let cm = ChannelManager::new(current_node, endpoint.clone(), Duration::from_millis(300)).start();
     
 
     let node = Node { root_actor: root_actor_addr  };
@@ -206,9 +229,14 @@ pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Bo
 
     let channel_manager = Data::new(cm);
 
+    let endpoint_clone = Data::new(endpoint.clone());
+
     let http_server = HttpServer::new(move || App::new()
     .app_data(Data::clone(&root_actor))
-    .app_data( Data::clone(&channel_manager))
+    .app_data(Data::clone(&channel_manager))
+    .app_data(Data::new(current_node))
+    .app_data(Data::clone(&endpoint_clone))
+    .app_data(Data::new(reqwest::Client::new()))
     .service(index)
     .service(put)
     .service(get))

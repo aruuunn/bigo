@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::{uuid, Uuid};
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Serialize)]
 pub struct LocationStats {
     pub id: String,
     pub seismic_activity: f64,

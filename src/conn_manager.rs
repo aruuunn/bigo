@@ -57,7 +57,7 @@ impl ChannelManager {
         
         // Create a new lazy channel
         if let Some(endpoint_url) = self.endpoints.get(&node_id) {
-            match Endpoint::from_shared(endpoint_url.clone()) {
+            match Endpoint::from_shared(format!("http://{}:8080", endpoint_url.clone())) {
                 Ok(endpoint) => {
                     // Create a lazily-connected channel
                     let channel = endpoint.connect_lazy();

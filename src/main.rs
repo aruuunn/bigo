@@ -29,8 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .position(|ip| *ip == current_node_ip)
     .expect("Current node IP not found in ALL_NODE_IPS");
 
-    api::bootstrap(current_node_idx as u32, all_node_ips.iter().map(|ip| format!("http://{}:8080", ip))
-    .collect()).await?;
+    api::bootstrap(current_node_idx as u32, all_node_ips).await?;
     Ok(())
 }
 
