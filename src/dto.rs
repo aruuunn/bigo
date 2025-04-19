@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::{uuid, Uuid};
 
 #[derive(Deserialize, Clone)]
 pub struct LocationStats {
@@ -41,7 +42,7 @@ impl fmt::Display for ShardError {
 impl Error for ShardError {}
 
 // Constants for our encoding
-const ID_SIZE: usize = 8; // 7 chars + null terminator
+const ID_SIZE: usize = 16; // uuid
 const TOTAL_SIZE: usize = ID_SIZE + 8 + 8 + 8 + 8; // id + 4 fields (8 bytes each)
 const SHARD_SIZE: usize = TOTAL_SIZE / 4; // Each shard will be exactly this size
 
@@ -85,29 +86,16 @@ impl EnrichedLocationStats {
         // Create a buffer big enough to hold all data
         let mut buffer = vec![0u8; TOTAL_SIZE];
 
-        // Encode ID with padding
-        let mut id = self.id.clone();
-        if id.len() > 6 {
-            return Err(ShardError::EncodingError(
-                "ID is too long (max 6 characters)".to_string(),
-            ));
-        }
-
-        // Pad ID with '$' characters to make it fixed size
-        while id.len() < 7 {
-            id.push('$');
-        }
-
-        // Copy ID bytes into buffer
-        for (i, byte) in id.as_bytes().iter().enumerate() {
-            buffer[i] = *byte;
-        }
+        let uuid = Uuid::parse_str(&self.id).unwrap();
+    
 
         // Encode numeric fields (using little-endian byte order)
         let modification_bytes = self.modification_count.to_le_bytes();
         let seismic_bytes = self.seismic_activity.to_le_bytes();
         let temperature_bytes = self.temperature_c.to_le_bytes();
         let radiation_bytes = self.radiation_level.to_le_bytes();
+
+        buffer[0..ID_SIZE].copy_from_slice(uuid.as_bytes());
 
         // Copy numeric field bytes into buffer
         let mut offset = ID_SIZE;
@@ -152,11 +140,8 @@ impl EnrichedLocationStats {
 
         // Extract ID (terminating at null or $ padding)
         let id_bytes = &buffer[0..ID_SIZE];
-        let id_end = id_bytes
-            .iter()
-            .position(|&b| b == 0 || b == b'$')
-            .unwrap_or(ID_SIZE);
-        let id = String::from_utf8_lossy(&id_bytes[0..id_end]).to_string();
+
+        let id = Uuid::from_slice(id_bytes).unwrap().to_string();
 
         // Extract numeric fields
         let modification_count =
@@ -210,11 +195,11 @@ mod tests {
 
     #[test]
     fn test_new_valid_id() {
-        let result = EnrichedLocationStats::new("ABC123".to_string(), 42, 3.14, 25.5, 0.001);
+        let result = EnrichedLocationStats::new("bac32c52-bb64-476d-a36d-91069bbd8a5e".to_string(), 42, 3.14, 25.5, 0.001);
 
         assert!(result.is_ok());
         let stats = result.unwrap();
-        assert_eq!(stats.id, "ABC123");
+        assert_eq!(stats.id, "bac32c52-bb64-476d-a36d-91069bbd8a5e");
         assert_eq!(stats.modification_count, 42);
         assert_eq!(stats.seismic_activity, 3.14);
         assert_eq!(stats.temperature_c, 25.5);
@@ -225,7 +210,7 @@ mod tests {
     fn test_encode_decode_roundtrip() {
         // Create original stats
         let original =
-            EnrichedLocationStats::new("TEST12".to_string(), 100, 5.678, -10.5, 0.0123).unwrap();
+            EnrichedLocationStats::new("b6517ac5-2bf3-4a97-864a-ab4561381d5e".to_string(), 100, 5.678, -10.5, 0.0123).unwrap();
 
         // Encode to shards
         let shards = original.to_shards().unwrap();
@@ -246,40 +231,13 @@ mod tests {
         assert_eq!(decoded.radiation_level, original.radiation_level);
     }
 
-    #[test]
-    fn test_empty_id() {
-        // Create with empty ID (should be valid)
-        let stats = EnrichedLocationStats::new("".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
-
-        // Encode to shards
-        let shards = stats.to_shards().unwrap();
-
-        // Decode back from shards
-        let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
-
-        // Empty ID should be preserved
-        assert_eq!(decoded.id, "");
-    }
-
-    #[test]
-    fn test_max_length_id() {
-        // ID with exactly 6 characters (the maximum)
-        let id = "123456".to_string();
-        assert_eq!(id.len(), 6);
-
-        let stats = EnrichedLocationStats::new(id.clone(), 42, 3.14, 25.5, 0.001).unwrap();
-
-        let shards = stats.to_shards().unwrap();
-        let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
-
-        assert_eq!(decoded.id, id);
-    }
+  
 
     #[test]
     fn test_extreme_values() {
         // Test with extreme numeric values
         let stats = EnrichedLocationStats::new(
-            "EXTREM".to_string(),
+            "bac32c52-bb64-476d-a36d-91069bbd8a5e".to_string(),
             i64::MAX,
             f64::MAX,
             f64::MIN_POSITIVE,
@@ -290,7 +248,7 @@ mod tests {
         let shards = stats.to_shards().unwrap();
         let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
 
-        assert_eq!(decoded.id, "EXTREM");
+        assert_eq!(decoded.id, "bac32c52-bb64-476d-a36d-91069bbd8a5e");
         assert_eq!(decoded.modification_count, i64::MAX);
         assert_eq!(decoded.seismic_activity, f64::MAX);
         assert_eq!(decoded.temperature_c, f64::MIN_POSITIVE);
@@ -299,28 +257,6 @@ mod tests {
 
     // ----- SAD PATH TESTS -----
 
-    #[test]
-    fn test_to_shards_id_too_long() {
-        // Create a struct bypassing the constructor validation
-        let stats = EnrichedLocationStats {
-            id: "123456789012".to_string(),
-            modification_count: 42,
-            seismic_activity: 3.14,
-            temperature_c: 25.5,
-            radiation_level: 0.001,
-        };
-
-        // Attempt to create shards
-        let result = stats.to_shards();
-
-        assert!(result.is_err());
-        match result {
-            Err(ShardError::EncodingError(msg)) => {
-                assert!(msg.contains("ID is too long"));
-            }
-            _ => panic!("Expected EncodingError"),
-        }
-    }
 
     #[test]
     fn test_from_shards_invalid_shard_size() {
@@ -347,7 +283,7 @@ mod tests {
     fn test_from_shards_inconsistent_sizes() {
         // Create a set of correctly-sized shards
         let valid_stats =
-            EnrichedLocationStats::new("TEST".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
+            EnrichedLocationStats::new("a6bdf0c3-8fbc-4371-8acd-c851e83fe248".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
 
         let mut valid_shards = valid_stats.to_shards().unwrap();
 
@@ -369,7 +305,7 @@ mod tests {
     fn test_from_shards_corrupted_data() {
         // Create valid stats and encode to shards
         let stats =
-            EnrichedLocationStats::new("CORRUP".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
+            EnrichedLocationStats::new("a6bdf0c3-8fbc-4371-8acd-c851e83fe248".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
 
         let mut shards = stats.to_shards().unwrap();
 
@@ -382,30 +318,11 @@ mod tests {
         let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
 
         // But the values will be different from the original
-        assert_eq!(decoded.id, "CORRUP"); // ID should be the same
+        assert_eq!(decoded.id, "a6bdf0c3-8fbc-4371-8acd-c851e83fe248"); // ID should be the same
         assert!(
             decoded.seismic_activity != 3.14
                 || decoded.temperature_c != 25.5
                 || decoded.radiation_level != 0.001
         );
-    }
-
-    #[test]
-    fn test_non_utf8_id_handling() {
-        // Create valid stats and encode to shards
-        let stats = EnrichedLocationStats::new("VALID".to_string(), 42, 3.14, 25.5, 0.001).unwrap();
-
-        let mut shards = stats.to_shards().unwrap();
-
-        // Corrupt the ID part with invalid UTF-8 bytes
-        shards[0][0] = 0xFF;
-        shards[0][1] = 0xFE;
-
-        // The from_shards should handle this by replacing invalid UTF-8 with the replacement character
-        let decoded = EnrichedLocationStats::from_shards(shards).unwrap();
-
-        // The ID will be different but shouldn't panic
-        assert_ne!(decoded.id, "VALID");
-        assert!(decoded.id.contains("�")); // Contains replacement character
     }
 }
