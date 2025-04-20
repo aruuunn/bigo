@@ -5,6 +5,7 @@ use std::error::Error;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use actix_web::{get, HttpRequest, Responder};
 use log::logger;
+use util::parse_socket_addr;
 mod api;
 mod root_actor;
 mod location_actor;
@@ -12,6 +13,9 @@ mod dto;
 mod rs;
 mod node;
 mod conn_manager;
+mod util;
+
+
 
 
 #[actix::main]
@@ -31,7 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Current node index: {}", current_node_idx);
 
-    api::bootstrap(current_node_idx as u32, all_node_ips).await?;
+    api::bootstrap(current_node_idx as u32, all_node_ips, parse_socket_addr(&current_node_ip_value).unwrap().1).await?;
     Ok(())
 }
 

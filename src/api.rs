@@ -4,7 +4,7 @@ use std::future::{self, Future};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::Duration;
-use actix::{Actor, Addr};
+use actix::{Actor, Addr, SyncArbiter};
 use actix_web::{put, web, App, HttpResponse, HttpServer};
 use actix_web::{get, HttpRequest, Responder};
 use actix_web::dev::Path;
@@ -82,7 +82,7 @@ fn is_connection_error(status: &Status) -> bool {
 }
 
 
-#[get("/ping")]
+#[get("/health")]
 async fn index(_req: HttpRequest) -> impl Responder {
     "pong"
 }
@@ -97,7 +97,7 @@ async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<
     // as current node is of type Data<u32>, I'm having trouble comparing them
     if *current_node.into_inner() != owner_id {
         info!("ahahahah");
-        let url = format!("http://{}:8000/{}", endpoints.get(owner_id as usize).unwrap(),location_id);
+        let url = format!("http://{}/{}", endpoints.get(owner_id as usize).unwrap(),location_id);
         info!("url: {}", url);
         let resp = client
         .put(&url).send_json(&body.into_inner()).await;
@@ -137,7 +137,7 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
         return HttpResponse::Ok().json(location_stats);
     }
 
-    if let Ok(shard) = addr.send(GetShard).await.unwrap() {
+    if let Ok(shard) = addr.send(GetShard(location_id.clone())).await.unwrap() {
         let channels_result = channel_manager
         .send(GetAllChannels {})
         .await;
@@ -154,7 +154,7 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
         let mut original_shards: HashMap<usize, Vec<u8>> = HashMap::new();
         let mut recovery_shards: HashMap<usize, Vec<u8>> = HashMap::new();
 
-        let owner_node_id = get_owner_node_id(location_id.clone());
+        let owner_node_id = get_owner_node_id(location_id);
 
         if let Some(location_stats) = res[owner_node_id as usize].location_stats.clone() {
             let enriched_location_stats = EnrichedLocationStats {
@@ -230,12 +230,11 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
 }
 
 
-pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn bootstrap(current_node: u32,endpoint: Vec<String>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let root_actor_addr = RootActor::new().start();
     let root_actor = Data::new(root_actor_addr.clone());
     let cm = ChannelManager::new(current_node, endpoint.clone(), Duration::from_millis(300)).start();
     
-
     let node = Node { root_actor: root_actor_addr  };
 
 
@@ -252,7 +251,7 @@ pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Bo
     .service(index)
     .service(put)
     .service(get))
-    .bind(("0.0.0.0", 8000)).unwrap()
+    .bind(("0.0.0.0", port)).unwrap()
     .run();
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -263,7 +262,7 @@ pub async fn bootstrap(current_node: u32,endpoint: Vec<String>) -> Result<(), Bo
     let grpc = Server::builder()
     .add_service(reflection_service)
     .add_service(RsServer::new(node))
-    .serve("0.0.0.0:8080".parse().unwrap());
+    .serve(format!("0.0.0.0:{}", port+1).parse().unwrap());
     
     join!(grpc, http_server);
 

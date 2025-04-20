@@ -32,8 +32,8 @@ impl rs::rs_server::Rs for Node {
 
     async fn get_shard_request(&self, request: Request<GetShardRequest>) -> Result<Response<GetShardResponse>, Status> {
         let data = request.into_inner();
-        let addr =  self.root_actor.send(GetAddr(data.location_id)).await.unwrap().unwrap();
-        let shard = addr.send(GetShard{}).await.unwrap().ok();
+        let addr =  self.root_actor.send(GetAddr(data.location_id.clone())).await.unwrap().unwrap();
+        let shard = addr.send(GetShard(data.location_id)).await.unwrap().ok();
         let location_stats = addr.send(GetLocation{}).await.unwrap().ok();
 
         if shard.is_none() && location_stats.is_none() {

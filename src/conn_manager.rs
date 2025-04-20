@@ -6,6 +6,8 @@ use actix::prelude::*;
 use tonic::transport::{Channel, Endpoint};
 use log::info;
 
+use crate::util::parse_socket_addr;
+
 // Message to get a channel for a node
 #[derive(Message)]
 #[rtype(result = "Result<Channel, String>")]
@@ -57,7 +59,8 @@ impl ChannelManager {
         
         // Create a new lazy channel
         if let Some(endpoint_url) = self.endpoints.get(&node_id) {
-            match Endpoint::from_shared(format!("http://{}:8080", endpoint_url.clone())) {
+            let (ip, port) = parse_socket_addr(&endpoint_url).unwrap();
+            match Endpoint::from_shared(format!("http://{}:{}", ip, port+80)) {
                 Ok(endpoint) => {
                     // Create a lazily-connected channel
                     let channel = endpoint.connect_lazy();
