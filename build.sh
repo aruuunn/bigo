@@ -44,7 +44,12 @@ start_server() {
   
   echo "Starting rust-server-$server_num on HTTP port $http_port"
 
-  ./target/release/rs > "server-$server_num.log" 2>&1 &
+  # if [ $server_num -eq 1 ]; then
+  #   samply record --duration 180 --save-only ./target/release/rs > "server-$server_num.log" 2>&1 &
+  # else
+    ./target/release/rs > "server-$server_num.log" 2>&1 &
+  # fi
+
   
   # Store the PID for potential cleanup later
   echo $! > "server-$server_num.pid"

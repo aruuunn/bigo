@@ -7,3 +7,11 @@ pub fn parse_socket_addr(addr_str: &str) -> Result<(String, u16), Box<dyn std::e
     
     Ok((ip, port))
 }
+
+pub fn get_owner_node_id(location_id: String) -> u32 {
+    let mut owner_id = 0;
+    for (_, c) in location_id.chars().enumerate() {
+        owner_id = ((owner_id * 10) % 7 + (c as u32) % 7) % 7;
+    }
+   return owner_id;
+}

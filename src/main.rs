@@ -14,11 +14,12 @@ mod rs;
 mod node;
 mod conn_manager;
 mod util;
+mod constants;
 
 
 
 
-#[actix::main]
+#[actix_rt::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let current_node_ip_value = env::var("CURRENT_NODE_IP").unwrap();

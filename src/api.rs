@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::error;
 use std::future::{self, Future};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::Duration;
-use actix::{Actor, Addr, SyncArbiter};
+use actix::{Actor, Addr, Arbiter, SyncArbiter};
 use actix_web::{put, web, App, HttpResponse, HttpServer};
 use actix_web::{get, HttpRequest, Responder};
 use actix_web::dev::Path;
@@ -17,23 +16,17 @@ use log::{error, info};
 use tokio::join;
 use tonic::transport::{Channel, Server};
 use tonic::{IntoRequest, Request, Status};
-use crate::conn_manager::{ChannelManager, GetAllChannels, ResetChannel};
-use crate::dto::{EnrichedLocationStats, LocationStats, ShardError};
+use crate::conn_manager::{ChannelManager, GetAllChannels, GetChannel, ResetChannel};
+use crate::constants::ROOT_ACTOR_POOL_SIZE;
+use crate::dto::{EnrichedLocationStats, ExtendedLocationStats, LocationStats, ShardError};
 use crate::location_actor::{GetLocation, GetShard, PutLocation};
 use crate::node::Node;
 use crate::root_actor::{GetAddr, RootActor};
 use crate::rs;
 use crate::rs::rs::rs_server::{Rs, RsServer};
-use crate::rs::rs::{GetShardRequest, GetShardResponse, WriteShardRequest};
+use crate::rs::rs::{GetShardRequest, GetShardResponse, RouteWriteRequest, WriteShardRequest};
+use crate::util::get_owner_node_id;
 
-
-fn get_owner_node_id(location_id: String) -> u32 {
-    let mut owner_id = 0;
-    for (_, c) in location_id.chars().enumerate() {
-        owner_id = ((owner_id * 10) % 7 + (c as u32) % 7) % 7;
-    }
-   return owner_id;
-}
 
 
 async fn read_shard_from_node(
@@ -42,21 +35,16 @@ async fn read_shard_from_node(
     channel: Channel,
     location_id: String,
 ) -> Result<GetShardResponse, ShardError> {
-    // Create a gRPC client using the channel
     let mut client = rs::rs::rs_client::RsClient::new(channel);
     
-    // Prepare the request
     let request = Request::new(GetShardRequest {
         location_id
     });
     
-    // Send the RPC call and handle errors
     match client.get_shard_request(request).await {
         Ok(res) => Ok(res.into_inner()),
         Err(status) => {
-            // Check if it's a connection error
             if is_connection_error(&status) {
-                // Send ResetConnection message to ChannelManager
                 addr.do_send(ResetChannel(node_id));
             }
             
@@ -69,9 +57,7 @@ async fn read_shard_from_node(
     }
 }
 
-// Helper method to determine if the error is a connection error
 fn is_connection_error(status: &Status) -> bool {
-    // Check for common connection errors
     matches!(
         status.code(),
         tonic::Code::Unavailable | 
@@ -88,41 +74,62 @@ async fn index(_req: HttpRequest) -> impl Responder {
 }
 
 #[put("/{location_id}")]
-async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<Addr<RootActor>>, channel_manager: Data<Addr<ChannelManager>>, current_node: Data<u32>, endpoints: Data<Vec<String>>, client: Data<Client>) -> impl Responder {
+async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor_pool: Data<Vec<Addr<RootActor>>>, channel_manager: Data<Addr<ChannelManager>>, current_node: Data<u32>, endpoints: Data<Vec<String>>, client: Data<Client>) -> impl Responder {
     let location_id = id.into_inner();
+    let root_actor = root_actor_pool.get((get_owner_node_id(location_id.clone()) % ROOT_ACTOR_POOL_SIZE) as usize).unwrap();
     let owner_id = get_owner_node_id(location_id.clone());
+ 
 
-    info!("routing write request for location_id {} to node {} {}", location_id, *current_node.clone().into_inner(), owner_id);
-
-    // as current node is of type Data<u32>, I'm having trouble comparing them
     if *current_node.into_inner() != owner_id {
-        info!("ahahahah");
-        let url = format!("http://{}/{}", endpoints.get(owner_id as usize).unwrap(),location_id);
-        info!("url: {}", url);
-        let resp = client
-        .put(&url).send_json(&body.into_inner()).await;
+        let channel = channel_manager
+        .send(GetChannel(owner_id))
+        .await.unwrap().unwrap();
+        let mut client = rs::rs::rs_client::RsClient::new(channel.clone());
 
-        println!("response: {:?}", resp);
-
-        if let Err(err) = resp {
-            error!("Failed to put location stats: {}", err);
-            return HttpResponse::InternalServerError().json("Failed to put location stats");
+        match client.route_write(Request::new(RouteWriteRequest {
+            location_id: location_id.clone(),
+            id: body.id.clone(),
+            seismic_activity: body.seismic_activity,
+            temperature_c: body.temperature_c,
+            radiation_level: body.radiation_level
+        })).await {
+            Ok(_) => {
+                return HttpResponse::Created().json(());
+            }
+            Err(status) => {
+                if is_connection_error(&status) {
+                    channel_manager.do_send(ResetChannel(owner_id));
+                }
+                error!("Failed to route write to node {}: {}", owner_id, status);
+                return HttpResponse::InternalServerError().json("Failed to route write");
+            }  
+            
         }
 
-        let result=  resp.unwrap();
-        if result.status() != 201 {
-            error!("Failed to put location stats: {}", result.status());
-            return HttpResponse::InternalServerError().json("Failed to put location stats");
-        }
+        // let url = format!("http://{}/{}", endpoints.get(owner_id as usize).unwrap(),location_id);
+        // let resp = client
+        // .put(&url).send_json(&body.clone()).await;
+
+        // // info!("Sending location stats to {}: {:?}", url, body.id);
+
+        // if let Err(err) = resp {
+        //     error!("Failed to put location stats: {} {}", err, location_id);
+        //     return HttpResponse::InternalServerError().json("Failed to put location stats");
+        // }
+
+        // let result=  resp.unwrap();
+        // if result.status() != 201 {
+        //     error!("Failed to put location stats: {} {}", result.status(), location_id);
+        //     return HttpResponse::InternalServerError().json("Failed to put location stats");
+        // }
     
-        return HttpResponse::Created().json(());
+        // return HttpResponse::Created().json(());
     }
 
-    info!("current node is the owner of the location_id {}", location_id);
 
-   let addr =  root_actor.send(GetAddr(location_id)).await.unwrap().unwrap();
-    if let Err(err) = addr.send(PutLocation(body.into_inner(), channel_manager.into_inner())).await.unwrap() {
-        error!("Failed to put location stats: {}", err);
+   let addr =  root_actor.send(GetAddr(location_id.clone())).await.unwrap().unwrap();
+    if let Err(err) = addr.send(PutLocation(ExtendedLocationStats::from_basic(location_id.clone(), body.into_inner()), channel_manager.into_inner())).await.unwrap() {
+        error!("Failed to put location stats: {} {}", err, location_id);
         return HttpResponse::InternalServerError().json("Failed to put location stats");
     }
 
@@ -130,8 +137,9 @@ async fn put(body: Json<LocationStats>, id: web::Path<String>, root_actor: Data<
 }
 
 #[get("/{location_id}")]
-async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel_manager: Data<Addr<ChannelManager>>) -> impl Responder {
+async fn get(id: web::Path<(String)>, root_actor_pool: Data<Vec<Addr<RootActor>>>, channel_manager: Data<Addr<ChannelManager>>) -> impl Responder {
     let (location_id) = id.into_inner();
+    let root_actor = root_actor_pool.get((get_owner_node_id(location_id.clone()) % ROOT_ACTOR_POOL_SIZE) as usize).unwrap();
     let addr =  root_actor.send(GetAddr(location_id.clone())).await.unwrap().unwrap();
     if let Ok(location_stats) = addr.send(GetLocation).await.unwrap() {
         return HttpResponse::Ok().json(location_stats);
@@ -142,7 +150,7 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
         .send(GetAllChannels {})
         .await;
 
-        let (current_node, channels) = channels_result.unwrap().unwrap();
+        let (_, channels) = channels_result.unwrap().unwrap();
 
         let mut f = Vec::new();
 
@@ -170,7 +178,6 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
 
         let mut shard_count = 0;
 
-        // println!("shards respons from nodes: {:?}", res);
 
         for i in 0..6usize {
             let node_id = if i as u32 >= owner_node_id {
@@ -183,12 +190,10 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
                 if i >= 4 {
                     recovery_shards.insert(i-4, shard);
                 } else {
-                    // original_shards.push((i, shard));
                     original_shards.insert(i, shard);
                 }
           
             }
-            //
         }
 
         if shard_count < 4 {
@@ -231,11 +236,24 @@ async fn get(id: web::Path<(String)>, root_actor: Data<Addr<RootActor>>, channel
 
 
 pub async fn bootstrap(current_node: u32,endpoint: Vec<String>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let root_actor_addr = RootActor::new().start();
-    let root_actor = Data::new(root_actor_addr.clone());
-    let cm = ChannelManager::new(current_node, endpoint.clone(), Duration::from_millis(300)).start();
+    let mut root_actor_pool: Vec<Addr<RootActor>> = Vec::new();
+    for _ in 0..ROOT_ACTOR_POOL_SIZE {
+        root_actor_pool.push(SyncArbiter::start(1, move || {
+            RootActor::new()
+        }));
+        // root_actor_pool.push(RootActor::start_in_arbiter(&a.handle(), |_| RootActor::new()));
+    }
+
+    let root_actor = Data::new(root_actor_pool.clone());
+    let endpoints_hm: Arc<HashMap<u32, String>> = Arc::new(endpoint.clone().into_iter()
+                .enumerate()
+                .map(|(i, endpoint)| (i as u32, endpoint))
+                .collect());
+    // let cm = SyncArbiter::start(2, move || ChannelManager::new(current_node, endpoints_hm.clone(), Duration::from_millis(300)));
+    let cm = ChannelManager::new(current_node, endpoints_hm.clone(), Duration::from_millis(300)).start();
     
-    let node = Node { root_actor: root_actor_addr  };
+
+    let node = Node { root_actor: root_actor_pool, channel_manager: Arc::new(cm.clone()) };
 
 
     let channel_manager = Data::new(cm);
@@ -262,7 +280,7 @@ pub async fn bootstrap(current_node: u32,endpoint: Vec<String>, port: u16) -> Re
     let grpc = Server::builder()
     .add_service(reflection_service)
     .add_service(RsServer::new(node))
-    .serve(format!("0.0.0.0:{}", port+1).parse().unwrap());
+    .serve(format!("0.0.0.0:{}", port+80).parse().unwrap());
     
     join!(grpc, http_server);
 

@@ -4,15 +4,61 @@ use uuid::{uuid, Uuid};
 #[derive(Deserialize, Clone, Serialize)]
 pub struct LocationStats {
     pub id: String,
-    pub location_id: String,
     pub seismic_activity: f64,
     pub temperature_c: f64,
     pub radiation_level: f64,
 }
 
+impl LocationStats {
+    pub fn from(req: RouteWriteRequest) -> Self {
+        LocationStats {
+            id: req.id,
+            seismic_activity: req.seismic_activity,
+            temperature_c: req.temperature_c,
+            radiation_level: req.radiation_level
+        }
+    }
+}
+
+
+#[derive(Deserialize, Clone, Serialize)]
+pub struct ExtendedLocationStats {
+    pub id: String,
+    pub seismic_activity: f64,
+    pub temperature_c: f64,
+    pub radiation_level: f64,
+    pub location_id: String
+}
+
+
+
+impl ExtendedLocationStats {
+    pub fn to_basic(&self) -> LocationStats {
+        LocationStats {
+            id: self.id.clone(),
+            seismic_activity: self.seismic_activity,
+            temperature_c: self.temperature_c,
+            radiation_level: self.radiation_level,
+        }
+    }
+
+    pub fn from_basic(location_id: String, stats: LocationStats) -> Self {
+        ExtendedLocationStats {
+            id: stats.id.clone(),
+            seismic_activity: stats.seismic_activity,
+            temperature_c: stats.temperature_c,
+            radiation_level: stats.radiation_level,
+            location_id: location_id,
+        }
+    }
+}
+
+
 use std::convert::TryInto;
 use std::error::Error;
 use std::fmt::{self, write};
+
+use crate::rs::rs::RouteWriteRequest;
 
 // Custom error type for shard operations
 #[derive(Debug)]

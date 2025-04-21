@@ -4,12 +4,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use actix::fut::{ready, wrap_future};
 use actix::prelude::*;
-use actix_async_handler::async_handler;
 use futures::future::try_join_all;
 use futures::FutureExt;
 use log::{error, info};
-use tokio::sync::Mutex;
-use tonic::client::GrpcService;
 use tonic::transport::{Channel, Endpoint, Uri};
 
 use actix::prelude::*;
@@ -47,16 +44,10 @@ impl LocationActor {
         }).await.unwrap();
 
 
-
-        // Send shards to other nodes
         let mut futures = Vec::new();
 
 
         for (i, shard) in recovery_shards.into_iter().enumerate() {
-            // Skip self-sharding if needed
-
-            // Get node_id for this shard (using some strategy, e.g., consistent hashing)
-
 
             let node_id: u32 = if i as u32 >= current_node {
                 i+1
@@ -91,7 +82,6 @@ impl LocationActor {
     ) -> Result<(), ShardError> {
         let mut client = rs::rs::rs_client::RsClient::new(channel);
         
-        // Prepare the request
         let request = Request::new(WriteShardRequest {
             location_id: location_id.clone(),
             shard: shard_data,
@@ -101,9 +91,7 @@ impl LocationActor {
         match client.write_shard_request(request).await {
             Ok(_) => Ok(()),
             Err(status) => {
-                // Check if it's a connection error
                 if Self::is_connection_error(&status) {
-                    // Send ResetConnection message to ChannelManager
                     addr.do_send(ResetChannel(node_id));
                 }
                 
@@ -112,9 +100,7 @@ impl LocationActor {
         }
     }
     
-    // Helper method to determine if the error is a connection error
     fn is_connection_error(status: &Status) -> bool {
-        // Check for common connection errors
         matches!(
             status.code(),
             tonic::Code::Unavailable | 
@@ -128,13 +114,12 @@ impl LocationActor {
 
 #[derive(Message)]
 #[rtype(result = "Result<Vec<()>,ShardError>")]
-pub struct PutLocation(pub LocationStats, pub Arc<Addr<ChannelManager>>);
+pub struct PutLocation(pub ExtendedLocationStats, pub Arc<Addr<ChannelManager>>);
 
 #[derive(Message)]
 #[rtype(result = "Result<EnrichedLocationStats, ()>")]
 pub struct GetLocation;
 
-// New message types for shard operations
 #[derive(Message)]
 #[rtype(result = "Result<(), ShardError>")]
 pub struct PutShard(pub Vec<u8>);
@@ -154,8 +139,8 @@ impl Handler<PutLocation> for LocationActor {
      
     fn handle(&mut self, msg: PutLocation, _ctx: &mut Self::Context) -> Self::Result {
         self.modification_count += 1;
-        self.location = Some(Box::new(msg.0.clone()));
-        let data = EnrichedLocationStats::from(self.modification_count, msg.0.clone());
+        self.location = Some(Box::new(msg.0.to_basic()));
+        let data = EnrichedLocationStats::from(self.modification_count, msg.0.to_basic());
         let actor = self.clone();
         let location_id = msg.0.location_id.clone();
 
@@ -206,7 +191,7 @@ impl Handler<GetShard> for LocationActor {
 
 use tonic::{Request, Status};
 use crate::conn_manager::{ChannelManager, GetAllChannels, ResetChannel};
-use crate::dto::{EnrichedLocationStats, LocationStats, ShardError};
+use crate::dto::{EnrichedLocationStats, ExtendedLocationStats, LocationStats, ShardError};
 use crate::rs;
 use crate::rs::rs::WriteShardRequest;
 
@@ -242,7 +227,7 @@ mod tests {
         }
     }
 
-    #[actix::test]
+    #[actix_rt::test]
     async fn test_put_shard_and_get_shard() {
         // Arrange
         let location_id = "test_location_1".to_string();
@@ -271,7 +256,7 @@ mod tests {
         }
     }
 
-    #[actix::test]
+    #[actix_rt::test]
     async fn test_get_shard_when_not_initialized() {
         // Arrange - Create actor without putting a shard
         let location_id = "test_location_2".to_string();
@@ -297,7 +282,7 @@ mod tests {
         }
     }
 
-    #[actix::test]
+    #[actix_rt::test]
     async fn test_multiple_put_shard_operations() {
         // Arrange
         let location_id = "test_location_3".to_string();
@@ -325,7 +310,7 @@ mod tests {
     }
 
 
-    #[actix::test]
+    #[actix_rt::test]
     async fn test_large_shard_data() {
         // Arrange - Create actor
         let location_id = "test_location_6".to_string();
